@@ -153,7 +153,8 @@ func (dss *HostDatastoreSystem) CreateNasDatastore(ctx *Context, c *types.Create
 
 	ds.Info = &types.NasDatastoreInfo{
 		DatastoreInfo: types.DatastoreInfo{
-			Url: c.Spec.LocalPath,
+			Name: ds.Name,
+			Url:  c.Spec.LocalPath,
 		},
 		Nas: &types.HostNasVolume{
 			HostFileSystemVolume: types.HostFileSystemVolume{
@@ -173,6 +174,15 @@ func (dss *HostDatastoreSystem) CreateNasDatastore(ctx *Context, c *types.Create
 		r.Fault_ = err
 		return r
 	}
+
+	ds.Host = append(ds.Host, types.DatastoreHostMount{
+		Key: dss.Host.Reference(),
+		MountInfo: types.HostMountInfo{
+			AccessMode: string(types.HostMountModeReadWrite),
+			Mounted:    types.NewBool(true),
+			Accessible: types.NewBool(true),
+		},
+	})
 
 	_ = ds.RefreshDatastore(&types.RefreshDatastore{This: ds.Self})
 
