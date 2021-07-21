@@ -19,6 +19,7 @@ package simulator
 import (
 	"os"
 	"path"
+	"strings"
 
 	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -62,7 +63,9 @@ func (dss *HostDatastoreSystem) add(ctx *Context, ds *Datastore) *soap.Fault {
 	ds.Self.Type = typeName(ds)
 	// Datastore is the only type where create methods do not include the parent (Folder in this case),
 	// but we need the moref to be unique per DC/datastoreFolder, but not per-HostSystem.
-	ds.Self.Value += "@" + folder.Self.Value
+	if !strings.Contains(ds.Self.Value, "@") {
+		ds.Self.Value += "@" + folder.Self.Value
+	}
 	// TODO: name should be made unique in the case of Local ds type
 
 	ds.Summary.Datastore = &ds.Self
@@ -135,30 +138,38 @@ func (dss *HostDatastoreSystem) CreateLocalDatastore(ctx *Context, c *types.Crea
 }
 
 func (dss *HostDatastoreSystem) CreateNasDatastore(ctx *Context, c *types.CreateNasDatastore) soap.HasFault {
+	name := path.Base(c.Spec.LocalPath)
+	ds, err := ctx.svc.findDatastore(map[string][]string{
+		"dsName": {name},
+	})
+	// log.Printf("hostDatastoreSystem CreateNasDatastore %v", ds)
+
 	r := &methods.CreateNasDatastoreBody{}
+	if err != nil {
+		// log.Printf("hostDatastoreSystem CreateNasDatastore cannot find! %v", err)
+		ds = &Datastore{}
+		ds.Name = path.Base(c.Spec.LocalPath)
+		ds.Self.Value = c.Spec.RemoteHost + ":" + c.Spec.RemotePath
 
-	ds := &Datastore{}
-	ds.Name = path.Base(c.Spec.LocalPath)
-	ds.Self.Value = c.Spec.RemoteHost + ":" + c.Spec.RemotePath
-
-	ds.Info = &types.NasDatastoreInfo{
-		DatastoreInfo: types.DatastoreInfo{
-			Name: ds.Name,
-			Url:  c.Spec.LocalPath,
-		},
-		Nas: &types.HostNasVolume{
-			HostFileSystemVolume: types.HostFileSystemVolume{
-				Name: c.Spec.LocalPath,
-				Type: c.Spec.Type,
+		ds.Info = &types.NasDatastoreInfo{
+			DatastoreInfo: types.DatastoreInfo{
+				Name: ds.Name,
+				Url:  c.Spec.LocalPath,
 			},
-			RemoteHost: c.Spec.RemoteHost,
-			RemotePath: c.Spec.RemotePath,
-		},
-	}
+			Nas: &types.HostNasVolume{
+				HostFileSystemVolume: types.HostFileSystemVolume{
+					Name: c.Spec.LocalPath,
+					Type: c.Spec.Type,
+				},
+				RemoteHost: c.Spec.RemoteHost,
+				RemotePath: c.Spec.RemotePath,
+			},
+		}
 
-	ds.Summary.Type = c.Spec.Type
-	ds.Summary.MaintenanceMode = string(types.DatastoreSummaryMaintenanceModeStateNormal)
-	ds.Summary.Accessible = true
+		ds.Summary.Type = c.Spec.Type
+		ds.Summary.MaintenanceMode = string(types.DatastoreSummaryMaintenanceModeStateNormal)
+		ds.Summary.Accessible = true
+	}
 
 	if err := dss.add(ctx, ds); err != nil {
 		r.Fault_ = err
